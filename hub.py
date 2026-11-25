@@ -24,6 +24,7 @@ Use --no-push to batch several edits, then `hub.py push`.
 """
 import argparse
 import datetime as dt
+import glob
 import json
 import os
 import random
@@ -105,10 +106,44 @@ def find(doc, tid):
     die(f"no task {tid}")
 
 
+DATA_URL = "https://github.com/guneytamer/agent-hub-data.git"
+
+
+def project_config():
+    """Optional hub.json in the current directory: {"agent": "career-agent"}."""
+    try:
+        with open("hub.json") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def find_hub():
+    """Find an agent-hub-data clone near here; clone it to ~/agent-hub-data if none."""
+    cands = [os.path.join(os.getcwd(), "..", "agent-hub-data"), "~/agent-hub-data"]
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    if top:
+        cands.insert(0, os.path.join(os.path.dirname(top), "agent-hub-data"))
+    for root in ("~", "/home", "/workspace", "/workspaces", "/repos", "/tmp"):
+        root = os.path.expanduser(root)
+        for depth_glob in ("agent-hub-data", "*/agent-hub-data", "*/*/agent-hub-data"):
+            cands += glob.glob(os.path.join(root, depth_glob))
+    for c in cands:
+        c = os.path.abspath(os.path.expanduser(c))
+        if os.path.isdir(os.path.join(c, ".git")):
+            return c
+    dest = os.path.expanduser("~/agent-hub-data")
+    r = subprocess.run(["git", "clone", "--quiet", DATA_URL, dest], capture_output=True, text=True)
+    if r.returncode == 0:
+        return dest
+    die(f"no agent-hub-data clone found and `git clone {DATA_URL}` failed:\n{r.stderr.strip()}")
+
+
 def main():
+    cfg = project_config()
     p = argparse.ArgumentParser(description="Agent Hub CLI")
-    p.add_argument("--hub", default=os.environ.get("HUB_DIR"), help="path to agent-hub-data clone (or $HUB_DIR)")
-    p.add_argument("--agent", default=os.environ.get("HUB_AGENT"), help="agent id, e.g. career-agent (or $HUB_AGENT)")
+    p.add_argument("--hub", default=os.environ.get("HUB_DIR") or cfg.get("hub"), help="path to agent-hub-data clone (or $HUB_DIR; auto-found if unset)")
+    p.add_argument("--agent", default=os.environ.get("HUB_AGENT") or cfg.get("agent"), help="agent id, e.g. career-agent (or $HUB_AGENT, or hub.json)")
     p.add_argument("--no-push", action="store_true", help="edit locally without committing/pushing")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -125,10 +160,10 @@ def main():
     sub.add_parser("push")
     a = p.parse_args()
 
-    if not a.hub:
-        die("set HUB_DIR (path to your agent-hub-data clone) or pass --hub")
     if not a.agent:
-        die("set HUB_AGENT (e.g. career-agent) or pass --agent")
+        die("set HUB_AGENT (e.g. career-agent), pass --agent, or put {\"agent\": \"...\"} in ./hub.json")
+    if not a.hub:
+        a.hub = find_hub()
     hub = os.path.expanduser(a.hub)
     if not os.path.isdir(os.path.join(hub, ".git")):
         die(f"{hub} is not a git clone of agent-hub-data")
