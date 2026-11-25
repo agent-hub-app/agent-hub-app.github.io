@@ -340,6 +340,42 @@ function agentCard(a){
   </div>`;
 }
 
+function patURL(repo = cfg.repo){
+  const owner = (repo || DEFAULT_REPO).split("/")[0];
+  return "https://github.com/settings/personal-access-tokens/new?" + new URLSearchParams({
+    name: "Agent Hub dashboard", description: `Lets agent-hub-app.github.io read and write ${repo || DEFAULT_REPO}`,
+    target_name: owner, expires_in: "366", contents: "write",
+  });
+}
+
+// Check a token step by step; returns an HTML error message, or "" when everything works.
+async function diagnose(repo, token){
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return "Data repo should look like <code>owner/name</code>, e.g. <code>guneytamer/agent-hub-data</code>.";
+  if (!token) return "Paste the token first.";
+  if (!/^(github_pat_|ghp_|gho_)/.test(token)) return "That doesn't look like a GitHub token. It should start with <code>github_pat_</code>. Copy it again from GitHub (it's shown only once, right after Generate).";
+  const call = async path => {
+    try { return await fetch(`${API}${path}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }); }
+    catch { return null; }
+  };
+  const user = await call("/user");
+  if (!user) return "Couldn't reach api.github.com. Check your connection, or turn off ad/privacy blockers for this site, then try again.";
+  if (user.status === 401) return "GitHub rejected this token: it's mistyped, expired or deleted. Generate a new one and paste the whole thing.";
+  const who = user.ok ? (await user.json()).login : null;
+  const r = await call(`/repos/${repo}`);
+  if (!r) return "Couldn't reach api.github.com. Try again.";
+  if (r.status === 404) {
+    const owner = repo.split("/")[0], name = repo.split("/")[1];
+    return `The token works${who ? ` (signed in as <b>${esc(who)}</b>)` : ""} but can't see <code>${esc(repo)}</code>. On GitHub open the token → <b>Edit</b>: Resource owner must be <b>${esc(owner)}</b> (not an organization), and Repository access → <b>Only select repositories</b> → <code>${esc(name)}</code>. Then Save and click Connect again.`;
+  }
+  if (r.status === 403) { const m = (await r.json().catch(() => ({}))).message; return `GitHub refused access (403)${m ? ": " + esc(m) : ""}.`; }
+  if (!r.ok) return `GitHub answered ${r.status}. Try again in a minute.`;
+  const c = await call(`/repos/${repo}/contents/agents`);
+  if (!c) return "Couldn't reach api.github.com. Try again.";
+  if (c.status === 403 || c.status === 401)
+    return "The token can see the repo but not its files. Edit the token → Permissions → Repository permissions → <b>Contents: Read and write</b>, then Save.";
+  return "";
+}
+
 function renderConnect(err=""){
   ["#connectAgentBtn","#refreshBtn","#settingsBtn"].forEach(s => $(s).hidden = !cfg.token);
   $("#sync").textContent = "";
@@ -347,9 +383,9 @@ function renderConnect(err=""){
     <h1>Connect your hub</h1>
     <p>This page reads and writes your private <code>agent-hub-data</code> repo with a GitHub token. The token stays in this browser only.</p>
     <ol>
-      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Fine-grained tokens → Generate</a>.</li>
-      <li>Repository access: <b>Only select repositories</b> → <code>agent-hub-data</code>.</li>
-      <li>Permissions → Repository → <b>Contents: Read and write</b>. Generate and paste it below.</li>
+      <li><a id="patLink" href="${patURL()}" target="_blank" rel="noopener noreferrer"><b>Open GitHub's token page</b></a>. Name, owner (<b>${esc(cfg.repo.split("/")[0])}</b>), expiry and <b>Contents: Read and write</b> are filled in for you.</li>
+      <li>Under <b>Repository access</b> pick <b>Only select repositories</b> → <code>${esc(cfg.repo.split("/")[1] || "agent-hub-data")}</code>. This is the one thing to choose yourself.</li>
+      <li>Click <b>Generate token</b>, copy it (starts with <code>github_pat_</code>), paste it below.</li>
     </ol>
     <label for="repo">Data repo</label>
     <input type="text" id="repo" value="${esc(cfg.repo)}" autocomplete="off" spellcheck="false">
@@ -361,15 +397,19 @@ function renderConnect(err=""){
     </div>
     <div class="err" id="cfgErr">${esc(err)}</div>
   </div>`;
+  $("#repo").oninput = () => { $("#patLink").href = patURL($("#repo").value.trim()); };
   $("#saveCfg").onclick = async () => {
-    cfg.repo = $("#repo").value.trim(); cfg.token = $("#token").value.trim();
+    const repo = $("#repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
+    const token = $("#token").value.replace(/\s+/g, "");
+    const btn = $("#saveCfg"); btn.disabled = true;
     $("#cfgErr").textContent = "Checking…";
     try {
-      const repo = await fetch(`${API}/repos/${cfg.repo}`, { headers: { Authorization: `Bearer ${cfg.token}` } });
-      if (!repo.ok) throw new Error(repo.status === 401 ? "Token rejected." : repo.status === 404 ? "Repo not found, or the token can't see it." : `GitHub ${repo.status}`);
-      store.set("hub.repo", cfg.repo); store.set("hub.token", cfg.token);
+      const msg = await diagnose(repo, token);
+      if (msg) { $("#cfgErr").innerHTML = msg; return; }
+      cfg.repo = repo; cfg.token = token;
+      store.set("hub.repo", repo); store.set("hub.token", token);
       await refresh();
-    } catch (e) { $("#cfgErr").textContent = e.message; }
+    } finally { btn.disabled = false; }
   };
   if ($("#cancelCfg")) $("#cancelCfg").onclick = () => render();
   if ($("#forget")) $("#forget").onclick = () => { store.del("hub.token"); cfg.token = ""; renderConnect(); };
@@ -381,6 +421,7 @@ async function refresh(quiet){
   try { await load(); render(); }
   catch (e) {
     if (e.status === 401) { renderConnect("Token expired or revoked — paste a new one."); return; }
+    if ($("#cfgErr")) { $("#cfgErr").textContent = "Connected, but loading failed: " + e.message; return; }
     $("#sync").textContent = "Sync failed: " + e.message;
   }
 }
