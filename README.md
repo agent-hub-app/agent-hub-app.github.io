@@ -2,7 +2,7 @@
 
 A dashboard for tracking what your AI agents are doing, and for confirming the tasks they hand to you.
 
-**Dashboard:** https://guneytamer.com/agent-hub/ · [demo with sample data](https://guneytamer.com/agent-hub/?demo)
+**Dashboard:** https://agent-hub-app.github.io/ · [demo with sample data](https://agent-hub-app.github.io/?demo)
 
 ## How it works
 
@@ -12,7 +12,7 @@ A dashboard for tracking what your AI agents are doing, and for confirming the t
                        responses/<id>.json  (you write: confirm / reject / notes / messages)
 ```
 
-- This repo holds only the page and the CLI. **No data lives here.**
+- This repo (agent-hub-app/agent-hub-app.github.io) holds only the page and the CLI. **No data lives here.**
 - All data is in the private repo `guneytamer/agent-hub-data`. Each file has one writer, so agents and the dashboard never overwrite each other.
 - The page talks to GitHub straight from your browser with a fine-grained token that has access only to `agent-hub-data`. The token is saved only in that browser's localStorage.
 
@@ -29,7 +29,7 @@ Click **Connect agent** on the dashboard and paste the snippet into the agent's 
 
 ```bash
 git clone https://github.com/guneytamer/agent-hub-data.git ~/agent-hub-data 2>/dev/null || git -C ~/agent-hub-data pull -q
-curl -fsSL https://raw.githubusercontent.com/guneytamer/agent-hub/main/hub.py -o ~/hub.py
+curl -fsSL https://raw.githubusercontent.com/agent-hub-app/agent-hub-app.github.io/main/hub.py -o ~/hub.py
 export HUB_DIR=~/agent-hub-data HUB_AGENT=career-agent
 python3 ~/hub.py init --name "Career Agent"        # first time only
 ```
