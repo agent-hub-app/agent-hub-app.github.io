@@ -198,7 +198,7 @@ async function readJSON(path){
 }
 
 async function load(){
-  if (DEMO) { state = demoData(); state.loadedAt = new Date(); return; }
+  if (DEMO) { if (!state.loadedAt) state = demoData(); state.loadedAt = new Date(); return; }
   const [agentDir, respDir] = await Promise.all([gh("contents/agents"), gh("contents/responses")]);
   const files = (agentDir||[]).filter(f => f.name.endsWith(".json"));
   const respFiles = (respDir||[]).filter(f => f.name.endsWith(".json"));
@@ -254,7 +254,7 @@ function render(){
   const confirmedWeek = all.filter(x => x.s === "confirmed" && new Date(x.r.at) > weekAgo).length;
 
   $("#app").innerHTML = `
-    ${DEMO ? `<div class="card" style="padding:12px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-color:var(--you);background:var(--you-soft)"><span style="flex:1;min-width:200px">This is <b>sample data</b>, not your agents.</span><a class="btn primary" href="./" style="text-decoration:none">Go to my hub →</a></div>` : ""}
+    ${DEMO ? `<div class="card" style="padding:12px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-color:var(--you);background:var(--you-soft)"><span style="flex:1;min-width:200px">This is <b>sample data</b>, not your agents. Clicks here are not saved.</span><a class="btn primary" href="./" style="text-decoration:none">Go to my hub →</a></div>` : ""}
     <div class="stats">
       <div class="stat you"><b>${needs.length}</b><span>Waiting on you</span></div>
       <div class="stat"><b>${working}<small style="font-size:15px;color:var(--faint)"> / ${state.agents.length}</small></b><span>Agents working</span></div>
