@@ -2,7 +2,7 @@
 
 A dashboard for tracking what your AI agents are doing, and for confirming the tasks they hand to you.
 
-**Dashboard:** https://guneytamer.github.io/agent-hub/ · [demo with sample data](https://guneytamer.github.io/agent-hub/?demo)
+**Dashboard:** https://guneytamer.com/agent-hub/ · [demo with sample data](https://guneytamer.com/agent-hub/?demo)
 
 ## How it works
 
