@@ -130,43 +130,19 @@ dialog p{color:var(--muted);margin:8px 0}
 <header><div class="wrap">
   <div class="brand"><i><svg width="14" height="14" viewBox="0 0 32 32"><path d="M7 17l6 6 12-14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>Agent Hub</div>
   <div class="sync" id="sync"></div>
-  <button class="btn ghost" id="connectAgentBtn" hidden>Connect agent</button>
-  <button class="icon-btn" id="refreshBtn" title="Refresh" hidden aria-label="Refresh"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
-  <button class="icon-btn" id="settingsBtn" title="Settings" hidden aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  <a class="btn ghost" id="issuesLink" target="_blank" rel="noopener" style="text-decoration:none" hidden>All tasks in GitHub ↗</a>
+  <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
 </div></header>
 
-<main class="wrap" id="app"></main>
-
-<dialog id="agentDlg">
-  <h3>Connect an agent</h3>
-  <p>Paste this into the agent's instructions (CLAUDE.md, AGENT.md, or a routine prompt). The agent then reports here and reads what you confirm.</p>
-  <pre id="snippet"></pre>
-  <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
-    <button class="btn" id="copySnippet">Copy</button>
-    <button class="btn primary" onclick="this.closest('dialog').close()">Done</button>
-  </div>
-</dialog>
+<main class="wrap" id="app"><div class="card empty">Loading…</div></main>
 <div class="toast" id="toast"></div>
 
 <script>
 (() => {
-const API = "https://api.github.com";
-const DEFAULT_REPO = "guneytamer/agent-hub-data";
-const HUB_PY = "https://raw.githubusercontent.com/agent-hub-app/agent-hub-app.github.io/main/hub.py";
-const DEMO = new URLSearchParams(location.search).has("demo");
-
-const store = {
-  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
-  set(k,v){ try { localStorage.setItem(k,v); } catch {} },
-  del(k){ try { localStorage.removeItem(k); } catch {} },
-};
-let cfg = { repo: store.get("hub.repo") || DEFAULT_REPO, token: store.get("hub.token") || "" };
-let state = { agents: [], responses: {}, loadedAt: null };
-const openTasks = new Set();
-const expanded = new Set();
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const iso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+let data = null;
+const openAgents = new Set();
 
 function ago(t){
   if(!t) return "";
@@ -177,342 +153,103 @@ function ago(t){
   if (s < 86400*7) return Math.floor(s/86400) + "d ago";
   return new Date(t).toLocaleDateString(undefined,{month:"short",day:"numeric"});
 }
-function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+const label = s => ({ "needs-you":"needs you", doing:"in progress" }[s] || s);
+const issueURL = n => `https://github.com/${data.repo}/issues/${n}`;
 
-// ---------- GitHub contents API ----------
-async function gh(path, opts={}){
-  const r = await fetch(`${API}/repos/${cfg.repo}/${path}`, {
-    ...opts, cache: "no-store",
-    headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(opts.headers||{}) },
-  });
-  if (r.status === 404) return null;
-  if (!r.ok) { const e = new Error(`GitHub ${r.status}: ${(await r.json().catch(()=>({}))).message || r.statusText}`); e.status = r.status; throw e; }
-  return r.json();
-}
-const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,"")), c => c.charCodeAt(0)));
-const b64enc = s => { const b = new TextEncoder().encode(s); let out=""; for (let i=0;i<b.length;i+=0x8000) out += String.fromCharCode(...b.subarray(i,i+0x8000)); return btoa(out); };
-async function readJSON(path){
-  const f = await gh(`contents/${path}`);
-  if (!f) return { data: null, sha: null };
-  return { data: JSON.parse(b64dec(f.content)), sha: f.sha };
-}
-
-async function load(){
-  if (DEMO) { if (!state.loadedAt) state = demoData(); state.loadedAt = new Date(); return; }
-  const [agentDir, respDir] = await Promise.all([gh("contents/agents"), gh("contents/responses")]);
-  const files = (agentDir||[]).filter(f => f.name.endsWith(".json"));
-  const respFiles = (respDir||[]).filter(f => f.name.endsWith(".json"));
-  const [agents, resps] = await Promise.all([
-    Promise.all(files.map(f => readJSON(`agents/${f.name}`).then(r => r.data).catch(() => null))),
-    Promise.all(respFiles.map(f => readJSON(`responses/${f.name}`).then(r => [f.name.replace(/\.json$/,""), r.data]).catch(() => null))),
-  ]);
-  state.agents = agents.filter(Boolean);
-  state.responses = Object.fromEntries(resps.filter(Boolean));
-  state.loadedAt = new Date();
-}
-
-// Read-modify-write responses/<agent>.json with retry on sha conflicts.
-async function writeResponse(agentId, mutate, message){
-  if (DEMO) { const r = state.responses[agentId] ||= {responses:{},messages:[]}; mutate(r); return; }
-  for (let i = 0; i < 4; i++) {
-    const { data, sha } = await readJSON(`responses/${agentId}.json`);
-    const doc = data || { agent: agentId, responses: {}, messages: [] };
-    doc.responses ||= {}; doc.messages ||= [];
-    mutate(doc);
-    try {
-      await gh(`contents/responses/${agentId}.json`, { method: "PUT", body: JSON.stringify({
-        message, content: b64enc(JSON.stringify(doc, null, 2) + "\n"), ...(sha ? { sha } : {}),
-      })});
-      state.responses[agentId] = doc;
-      return;
-    } catch (e) { if (e.status !== 409 && e.status !== 422) throw e; }
+async function load(quiet){
+  if (!quiet) $("#sync").textContent = "Updating…";
+  try {
+    const r = await fetch(`hub.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status === 404 ? "No data published yet." : `HTTP ${r.status}`);
+    data = await r.json();
+    render();
+  } catch (e) {
+    $("#sync").textContent = "";
+    if (!data) $("#app").innerHTML = `<div class="card empty">Couldn't load the hub: ${esc(e.message)}<br><small>It fills in after your agents' first update.</small></div>`;
   }
-  throw new Error("Could not save after retries — try again.");
 }
 
-// ---------- derived ----------
-function effState(agentId, t){
-  const r = state.responses[agentId]?.responses?.[t.id];
-  if (r && t.state === "needs-you") return r.decision;
-  return t.state;
-}
-function allTasks(){
-  return state.agents.flatMap(a => (a.tasks||[]).map(t => ({ a, t, s: effState(a.agent, t), r: state.responses[a.agent]?.responses?.[t.id] })));
-}
-
-// ---------- render ----------
 function render(){
-  if (!cfg.token && !DEMO) return renderConnect();
-  ["#connectAgentBtn","#refreshBtn","#settingsBtn"].forEach(s => $(s).hidden = false);
-  const all = allTasks();
-  const needs = all.filter(x => x.s === "needs-you").sort((x,y) => x.t.created < y.t.created ? -1 : 1);
+  const all = data.agents.flatMap(a => a.tasks.map(t => ({ a, t })));
+  const needs = all.filter(x => x.t.state === "needs-you").sort((x,y) => x.t.created < y.t.created ? -1 : 1);
   const weekAgo = Date.now() - 7*864e5;
-  const recent = all.filter(x => (x.s === "confirmed" || x.s === "rejected" || x.s === "done") && new Date(x.r?.at || x.t.updated) > weekAgo)
-                    .sort((x,y) => (x.r?.at||x.t.updated) < (y.r?.at||y.t.updated) ? 1 : -1);
-  const working = state.agents.filter(a => a.status === "working").length;
-  const doneWeek = all.filter(x => x.s === "done" && new Date(x.t.updated) > weekAgo).length;
-  const confirmedWeek = all.filter(x => x.s === "confirmed" && new Date(x.r.at) > weekAgo).length;
+  const recent = all.filter(x => ["confirmed","rejected","done"].includes(x.t.state) && new Date(x.t.updated) > weekAgo)
+                    .sort((x,y) => x.t.updated < y.t.updated ? 1 : -1);
+  const working = data.agents.filter(a => a.status === "working").length;
+  $("#issuesLink").href = `https://github.com/${data.repo}/issues?q=is%3Aopen+label%3Aneeds-you`;
+  $("#issuesLink").hidden = false;
 
   $("#app").innerHTML = `
-    ${DEMO ? `<div class="card" style="padding:12px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-color:var(--you);background:var(--you-soft)"><span style="flex:1;min-width:200px">This is <b>sample data</b>, not your agents. Clicks here are not saved.</span><a class="btn primary" href="./" style="text-decoration:none">Go to my hub →</a></div>` : ""}
     <div class="stats">
       <div class="stat you"><b>${needs.length}</b><span>Waiting on you</span></div>
-      <div class="stat"><b>${working}<small style="font-size:15px;color:var(--faint)"> / ${state.agents.length}</small></b><span>Agents working</span></div>
-      <div class="stat"><b>${doneWeek}</b><span>Agent tasks done · 7d</span></div>
-      <div class="stat"><b>${confirmedWeek}</b><span>You confirmed · 7d</span></div>
+      <div class="stat"><b>${working}<small style="font-size:15px;color:var(--faint)"> / ${data.agents.length}</small></b><span>Agents working</span></div>
+      <div class="stat"><b>${all.filter(x => x.t.state === "done" && new Date(x.t.updated) > weekAgo).length}</b><span>Agent tasks done · 7d</span></div>
+      <div class="stat"><b>${all.filter(x => x.t.state === "confirmed" && new Date(x.t.updated) > weekAgo).length}</b><span>You confirmed · 7d</span></div>
     </div>
 
     <section>
       <h2>Waiting on you ${needs.length ? `<span class="count">${needs.length}</span>` : ""}</h2>
-      ${needs.length ? needs.map(needCard).join("") : `<div class="card empty">Nothing waiting on you. 🎉</div>`}
+      ${needs.length ? needs.map(({a,t}) => `
+        <div class="card need">
+          <div>
+            <div class="meta">${esc(a.name)} · asked ${ago(t.created)}</div>
+            <h3>${esc(t.title)}</h3>
+          </div>
+          <div class="actions">
+            ${t.issue ? `<a class="btn ok" style="text-decoration:none" href="${issueURL(t.issue)}" target="_blank" rel="noopener">Open &amp; mark done ↗</a>`
+                      : `<span class="meta">Opening in GitHub…</span>`}
+          </div>
+        </div>`).join("") : `<div class="card empty">Nothing waiting on you. 🎉</div>`}
+      ${needs.length ? `<p class="meta" style="color:var(--muted);font-size:13px;margin:6px 2px 0">Opens the task in GitHub. There, <b>Close issue</b> = done · <b>Close as not planned</b> = reject · a comment = note for the agent. This page updates about a minute later.</p>` : ""}
     </section>
 
     <section>
       <h2>Agents</h2>
-      ${state.agents.length ? `<div class="agents">${state.agents.slice().sort((x,y)=> (x.updated<y.updated?1:-1)).map(agentCard).join("")}</div>`
-        : `<div class="card empty">No agents connected yet. <button class="btn primary" data-act="snippet" style="margin-left:8px">Connect an agent</button></div>`}
+      ${data.agents.length ? `<div class="agents">${data.agents.slice().sort((x,y)=> x.updated < y.updated ? 1 : -1).map(agentCard).join("")}</div>`
+        : `<div class="card empty">No agents connected yet.</div>`}
     </section>
 
     <section>
       <h2>Recently finished · 7 days</h2>
       ${recent.length ? `<div class="card done-list">${recent.slice(0,25).map(x => `
-        <div class="row"><span class="pill s-${x.s}">${label(x.s)}</span><span class="t" title="${esc(x.t.title)}">${esc(x.t.title)}</span>
-        <small>${esc(x.a.name)} · ${ago(x.r?.at || x.t.updated)}</small>
-        ${x.r ? `<button class="icon-btn" title="Undo" aria-label="Undo" data-act="undo" data-agent="${esc(x.a.agent)}" data-id="${esc(x.t.id)}">↶</button>` : ""}</div>`).join("")}</div>`
+        <div class="row"><span class="pill s-${x.t.state}">${label(x.t.state)}</span><span class="t">${esc(x.t.title)}</span>
+        <small>${esc(x.a.name)} · ${ago(x.t.updated)}</small></div>`).join("")}</div>`
         : `<div class="card empty">Nothing finished in the last week.</div>`}
     </section>`;
-  $("#sync").textContent = (DEMO ? "Demo data · " : "") + `Updated ${state.loadedAt.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;
-}
-const label = s => ({ "needs-you":"needs you", doing:"in progress" }[s] || s);
-
-function needCard({a,t}){
-  return `<div class="card need" data-agent="${esc(a.agent)}" data-id="${esc(t.id)}">
-    <div>
-      <div class="meta">${esc(a.name)} · asked ${ago(t.created)}</div>
-      <h3>${esc(t.title)}</h3>
-      ${t.detail ? `<p>${esc(t.detail)}</p>` : ""}
-      ${t.link ? `<div style="margin-top:6px;font-size:14px"><a href="${esc(t.link)}" target="_blank" rel="noopener noreferrer">Open link ↗</a></div>` : ""}
-    </div>
-    <div class="actions">
-      <button class="btn ok" data-act="confirm">✓ Done</button>
-      <button class="btn" data-act="note">Reply…</button>
-    </div>
-    <div class="note">
-      <input type="text" placeholder="Note for the agent (optional)">
-      <button class="btn ok" data-act="confirm-note">Confirm</button>
-      <button class="btn" data-act="reject">Reject</button>
-    </div>
-  </div>`;
+  $("#sync").textContent = `Updated ${ago(data.generated)}`;
 }
 
 function agentCard(a){
-  const tasks = (a.tasks||[]).map(t => ({ t, s: effState(a.agent, t) }));
   const order = { "needs-you":0, doing:1, blocked:2, todo:3, done:4, confirmed:4, rejected:5 };
-  tasks.sort((x,y) => (order[x.s]-order[y.s]) || (x.t.updated < y.t.updated ? 1 : -1));
-  const n = tasks.length || 1;
-  const cnt = k => tasks.filter(x => k.includes(x.s)).length;
+  const tasks = a.tasks.slice().sort((x,y) => (order[x.state]-order[y.state]) || (x.updated < y.updated ? 1 : -1));
+  const n = tasks.length || 1, cnt = k => tasks.filter(t => k.includes(t.state)).length;
   const bars = [["done,confirmed","var(--ok)"],["doing","var(--work)"],["needs-you","var(--you)"],["blocked,rejected","var(--bad)"]]
     .map(([k,c]) => `<i style="width:${cnt(k.split(","))/n*100}%;background:${c}"></i>`).join("");
-  const showAll = expanded.has(a.agent);
-  const visible = showAll ? tasks : tasks.slice(0, 6);
-  const msgs = (state.responses[a.agent]?.messages || []).slice(-2);
-  const seenMsgs = a.seen?._messages || "";
-  return `<div class="card agent" data-agent="${esc(a.agent)}">
+  const all = openAgents.has(a.agent), visible = all ? tasks : tasks.slice(0, 6);
+  return `<div class="card agent">
     <div class="agent-top">
       <div class="avatar">${esc((a.name||a.agent).trim()[0].toUpperCase())}</div>
-      <div style="min-width:0"><h3>${esc(a.name || a.agent)}</h3><small>updated ${ago(a.updated)}</small></div>
+      <div style="min-width:0"><h3>${esc(a.name)}</h3><small>updated ${ago(a.updated)}</small></div>
       <span class="pill s-${esc(a.status)}">${esc(a.status)}</span>
     </div>
     ${a.summary ? `<p class="summary">${esc(a.summary)}</p>` : ""}
-    ${tasks.length ? `<div class="progress" title="${cnt(["done","confirmed"])} of ${tasks.length} finished">${bars}</div>` : ""}
-    ${tasks.length ? `<ul class="tasks">${visible.map(({t,s}) => `
-      <li class="${openTasks.has(t.id) ? "open" : ""}" data-id="${esc(t.id)}">
-        <div class="trow" data-act="toggle"><span class="pill s-${s}">${label(s)}</span><span class="t">${esc(t.title)}</span><span class="when">${ago(t.updated)}</span></div>
-        <div class="tdetail">
-          ${t.detail ? `<p>${esc(t.detail)}</p>` : ""}
-          ${t.link ? `<p><a href="${esc(t.link)}" target="_blank" rel="noopener noreferrer">${esc(t.link)}</a></p>` : ""}
-          ${state.responses[a.agent]?.responses?.[t.id]?.note ? `<p><b>Your note:</b> ${esc(state.responses[a.agent].responses[t.id].note)}</p>` : ""}
-          ${(t.log||[]).length ? `<ul class="log">${t.log.slice().reverse().map(l => `<li><time>${ago(l.at)}</time>${esc(l.msg)}</li>`).join("")}</ul>` : (t.detail||t.link ? "" : "<p>No updates logged.</p>")}
-        </div>
-      </li>`).join("")}</ul>` : `<p class="summary">No tasks yet.</p>`}
-    ${tasks.length > 6 ? `<button class="more" data-act="expand">${showAll ? "Show less" : `Show all ${tasks.length}`}</button>` : ""}
-    ${msgs.length ? `<ul class="msgs">${msgs.map(m => `<li><b>You</b> ${ago(m.at)}: ${esc(m.text)} ${m.at <= seenMsgs ? "· <span title='The agent has read this'>seen</span>" : ""}</li>`).join("")}</ul>` : ""}
-    <form class="msg" data-act="msg"><input type="text" placeholder="Message ${esc(a.name || a.agent)}…" maxlength="2000"><button class="btn">Send</button></form>
+    ${tasks.length ? `<div class="progress">${bars}</div><ul class="tasks">${visible.map(t => `
+      <li><div class="trow" style="cursor:default"><span class="pill s-${t.state}">${label(t.state)}</span>
+        <span class="t">${t.issue ? `<a href="${issueURL(t.issue)}" target="_blank" rel="noopener" style="color:inherit">${esc(t.title)}</a>` : esc(t.title)}</span>
+        <span class="when">${ago(t.updated)}</span></div></li>`).join("")}</ul>` : `<p class="summary">No tasks yet.</p>`}
+    ${tasks.length > 6 ? `<button class="more" data-agent="${esc(a.agent)}">${all ? "Show less" : `Show all ${tasks.length}`}</button>` : ""}
+    ${a.status_issue ? `<a class="more" style="text-decoration:none" href="${issueURL(a.status_issue)}" target="_blank" rel="noopener">Details &amp; message this agent in GitHub ↗</a>` : ""}
   </div>`;
 }
 
-function patURL(repo = cfg.repo){
-  const owner = (repo || DEFAULT_REPO).split("/")[0];
-  return "https://github.com/settings/personal-access-tokens/new?" + new URLSearchParams({
-    name: "Agent Hub dashboard", description: `Lets agent-hub-app.github.io read and write ${repo || DEFAULT_REPO}`,
-    target_name: owner, expires_in: "366", contents: "write",
-  });
-}
-
-// Check a token step by step; returns an HTML error message, or "" when everything works.
-async function diagnose(repo, token){
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return "Data repo should look like <code>owner/name</code>, e.g. <code>guneytamer/agent-hub-data</code>.";
-  if (!token) return "Paste the token first.";
-  if (!/^(github_pat_|ghp_|gho_)/.test(token)) return "That doesn't look like a GitHub token. It should start with <code>github_pat_</code>. Copy it again from GitHub (it's shown only once, right after Generate).";
-  const call = async path => {
-    try { return await fetch(`${API}${path}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }); }
-    catch { return null; }
-  };
-  const user = await call("/user");
-  if (!user) return "Couldn't reach api.github.com. Check your connection, or turn off ad/privacy blockers for this site, then try again.";
-  if (user.status === 401) return "GitHub rejected this token: it's mistyped, expired or deleted. Generate a new one and paste the whole thing.";
-  const who = user.ok ? (await user.json()).login : null;
-  const r = await call(`/repos/${repo}`);
-  if (!r) return "Couldn't reach api.github.com. Try again.";
-  if (r.status === 404) {
-    const owner = repo.split("/")[0], name = repo.split("/")[1];
-    return `The token works${who ? ` (signed in as <b>${esc(who)}</b>)` : ""} but can't see <code>${esc(repo)}</code>. On GitHub open the token → <b>Edit</b>: Resource owner must be <b>${esc(owner)}</b> (not an organization), and Repository access → <b>Only select repositories</b> → <code>${esc(name)}</code>. Then Save and click Connect again.`;
-  }
-  if (r.status === 403) { const m = (await r.json().catch(() => ({}))).message; return `GitHub refused access (403)${m ? ": " + esc(m) : ""}.`; }
-  if (!r.ok) return `GitHub answered ${r.status}. Try again in a minute.`;
-  const c = await call(`/repos/${repo}/contents/agents`);
-  if (!c) return "Couldn't reach api.github.com. Try again.";
-  if (c.status === 403 || c.status === 401)
-    return "The token can see the repo but not its files. Edit the token → Permissions → Repository permissions → <b>Contents: Read and write</b>, then Save.";
-  return "";
-}
-
-function renderConnect(err=""){
-  ["#connectAgentBtn","#refreshBtn","#settingsBtn"].forEach(s => $(s).hidden = !cfg.token);
-  $("#sync").textContent = "";
-  $("#app").innerHTML = `<div class="card connect">
-    <h1>Connect your hub</h1>
-    <p>This page reads and writes your private <code>agent-hub-data</code> repo with a GitHub token. The token stays in this browser only.</p>
-    <ol>
-      <li><a id="patLink" href="${patURL()}" target="_blank" rel="noopener noreferrer"><b>Open GitHub's token page</b></a>. Name, owner (<b>${esc(cfg.repo.split("/")[0])}</b>), expiry and <b>Contents: Read and write</b> are filled in for you.</li>
-      <li>Under <b>Repository access</b> pick <b>Only select repositories</b> → <code>${esc(cfg.repo.split("/")[1] || "agent-hub-data")}</code>. This is the one thing to choose yourself.</li>
-      <li>Click <b>Generate token</b>, copy it (starts with <code>github_pat_</code>), paste it below.</li>
-    </ol>
-    <label for="repo">Data repo</label>
-    <input type="text" id="repo" value="${esc(cfg.repo)}" autocomplete="off" spellcheck="false">
-    <label for="token">Token</label>
-    <input type="password" id="token" value="${esc(cfg.token)}" placeholder="github_pat_…" autocomplete="off" spellcheck="false">
-    <div class="row">
-      <button class="btn primary" id="saveCfg">Connect</button>
-      ${cfg.token ? `<button class="btn" id="cancelCfg">Cancel</button><button class="btn ghost" id="forget" style="margin-left:auto">Forget token</button>` : `<a href="?demo" style="margin-left:auto;font-size:14px">View demo</a>`}
-    </div>
-    <div class="err" id="cfgErr">${esc(err)}</div>
-  </div>`;
-  $("#repo").oninput = () => { $("#patLink").href = patURL($("#repo").value.trim()); };
-  $("#saveCfg").onclick = async () => {
-    const repo = $("#repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$|\/$/g, "");
-    const token = $("#token").value.replace(/\s+/g, "");
-    const btn = $("#saveCfg"); btn.disabled = true;
-    $("#cfgErr").textContent = "Checking…";
-    try {
-      const msg = await diagnose(repo, token);
-      if (msg) { $("#cfgErr").innerHTML = msg; return; }
-      cfg.repo = repo; cfg.token = token;
-      store.set("hub.repo", repo); store.set("hub.token", token);
-      await refresh();
-    } finally { btn.disabled = false; }
-  };
-  if ($("#cancelCfg")) $("#cancelCfg").onclick = () => render();
-  if ($("#forget")) $("#forget").onclick = () => { store.del("hub.token"); cfg.token = ""; renderConnect(); };
-}
-
-async function refresh(quiet){
-  if (!cfg.token && !DEMO) return renderConnect();
-  if (!quiet) $("#sync").textContent = "Syncing…";
-  try { await load(); render(); }
-  catch (e) {
-    if (e.status === 401) { renderConnect("Token expired or revoked — paste a new one."); return; }
-    if ($("#cfgErr")) { $("#cfgErr").textContent = "Connected, but loading failed: " + e.message; return; }
-    $("#sync").textContent = "Sync failed: " + e.message;
-  }
-}
-
-// ---------- actions ----------
-document.addEventListener("click", async ev => {
-  const el = ev.target.closest("[data-act]"); if (!el || el.tagName === "FORM") return;
-  const act = el.dataset.act;
-  if (act === "toggle") { const li = el.closest("li"); li.classList.toggle("open"); li.classList.contains("open") ? openTasks.add(li.dataset.id) : openTasks.delete(li.dataset.id); return; }
-  if (act === "expand") { const id = el.closest(".agent").dataset.agent; expanded.has(id) ? expanded.delete(id) : expanded.add(id); render(); return; }
-  if (act === "snippet") return showSnippet();
-  if (act === "note") { const c = el.closest(".need"); c.classList.toggle("noting"); c.querySelector("input").focus(); return; }
-  if (act === "undo") {
-    const { agent, id } = el.dataset; el.disabled = true;
-    try { await writeResponse(agent, d => { delete d.responses[id]; }, `Undo response on ${id}`); toast("Moved back to Waiting on you"); render(); }
-    catch (e) { toast(e.message); el.disabled = false; }
-    return;
-  }
-  if (["confirm","confirm-note","reject"].includes(act)) {
-    const c = el.closest(".need"); const { agent, id } = c.dataset;
-    const note = c.querySelector(".note input").value.trim();
-    const decision = act === "reject" ? "rejected" : "confirmed";
-    c.querySelectorAll("button").forEach(b => b.disabled = true);
-    try {
-      await writeResponse(agent, d => { d.responses[id] = { decision, at: iso(), ...(note ? { note } : {}) }; }, `${decision} ${id}`);
-      toast(decision === "confirmed" ? "Confirmed — the agent will see it on its next check" : "Rejected — sent back to the agent");
-      render();
-    } catch (e) { toast(e.message); c.querySelectorAll("button").forEach(b => b.disabled = false); }
-  }
+document.addEventListener("click", e => {
+  const b = e.target.closest("button.more[data-agent]"); if (!b) return;
+  openAgents.has(b.dataset.agent) ? openAgents.delete(b.dataset.agent) : openAgents.add(b.dataset.agent); render();
 });
-document.addEventListener("submit", async ev => {
-  const f = ev.target.closest("form[data-act=msg]"); if (!f) return;
-  ev.preventDefault();
-  const input = f.querySelector("input"); const text = input.value.trim(); if (!text) return;
-  const agent = f.closest(".agent").dataset.agent;
-  f.querySelector("button").disabled = true;
-  try { await writeResponse(agent, d => { d.messages.push({ at: iso(), text }); d.messages = d.messages.slice(-50); }, `Message to ${agent}`); toast("Sent"); render(); }
-  catch (e) { toast(e.message); f.querySelector("button").disabled = false; }
-});
-
-function showSnippet(){
-  $("#snippet").textContent =
-`## Agent Hub — report progress to Güney's dashboard
-Setup (once per session; skip steps already done):
-  git clone https://github.com/${cfg.repo}.git ~/agent-hub-data 2>/dev/null || git -C ~/agent-hub-data pull -q
-  curl -fsSL ${HUB_PY} -o ~/hub.py
-  export HUB_DIR=~/agent-hub-data HUB_AGENT=<your-agent-id>   # e.g. career-agent
-  python3 ~/hub.py init --name "<Display Name>"               # first time only
-
-Rules:
-- At the start of every run: python3 ~/hub.py check  → act on what the user CONFIRMED,
-  REJECTED (read the note) or MESSAGED. Do not redo confirmed work.
-- python3 ~/hub.py status working "what you're doing now"   (idle/blocked/done when you stop)
-- Own work:  id=$(python3 ~/hub.py add "title" --detail "...")
-             python3 ~/hub.py update $id --state doing|done|blocked --log "what happened"
-- Need the user to do/approve something: python3 ~/hub.py add "title" --you --detail "exact steps" --link URL
-  Never treat a --you task as done until \`check\` shows it CONFIRMED.
-- Never put passwords, tokens or other secrets in tasks or logs.`;
-  $("#agentDlg").showModal();
-}
-$("#copySnippet").onclick = async () => { try { await navigator.clipboard.writeText($("#snippet").textContent); toast("Copied"); } catch { toast("Select the text and copy it"); } };
-$("#connectAgentBtn").onclick = showSnippet;
-$("#refreshBtn").onclick = () => refresh();
-$("#settingsBtn").onclick = () => renderConnect();
-setInterval(() => { if (document.visibilityState === "visible" && (cfg.token || DEMO) && !document.querySelector(".need.noting, form.msg input:focus, #token")) refresh(true); }, 60000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && cfg.token && state.loadedAt && Date.now() - state.loadedAt > 30000) refresh(true); });
-
-function demoData(){
-  const h = n => new Date(Date.now() - n*3600e3).toISOString().replace(/\.\d{3}Z$/,"Z");
-  return {
-    agents: [
-      { agent:"career-agent", name:"Career Agent", status:"working", summary:"Scanning Greenhouse and Lever for sound design roles.", updated:h(.3), seen:{},
-        tasks:[
-          { id:"t-1", title:"Approve application package: Riot Games — Senior Sound Designer", owner:"you", state:"needs-you", detail:"Résumé v3 + cover letter are in packages/riot/. Reply APPROVE or note changes.", link:"https://github.com", created:h(5), updated:h(5), log:[] },
-          { id:"t-2", title:"Submit Workday application for Sledgehammer (portal needs your login)", owner:"you", state:"needs-you", detail:"Steps: open link, sign in, upload resume.pdf, submit.", link:"", created:h(26), updated:h(26), log:[] },
-          { id:"t-3", title:"Daily job scan", owner:"agent", state:"doing", created:h(1), updated:h(.3), log:[{at:h(1),msg:"Started scan"},{at:h(.3),msg:"14 new listings, 3 match"}] },
-          { id:"t-4", title:"Draft daily report email", owner:"agent", state:"done", created:h(20), updated:h(19), log:[{at:h(19),msg:"Gmail draft created"}] },
-        ]},
-      { agent:"barvision", name:"BarVision Builder", status:"idle", summary:"Waiting for App Review.", updated:h(30), seen:{},
-        tasks:[
-          { id:"t-5", title:"Resubmit 1.0 with 2.1 answers", owner:"agent", state:"done", created:h(80), updated:h(60), log:[] },
-          { id:"t-6", title:"Upload new screenshots in App Store Connect", owner:"you", state:"needs-you", detail:"Files in barvision-store-upload/shots/.", created:h(30), updated:h(30), log:[] },
-          { id:"t-7", title:"Property question set", owner:"agent", state:"blocked", detail:"Need source PDF for 2026 rules.", created:h(40), updated:h(32), log:[] },
-        ]},
-    ],
-    responses: { "career-agent": { responses: { }, messages:[{at:h(3),text:"Skip anything that requires relocation."}] } },
-  };
-}
-
-refresh();
+$("#refreshBtn").onclick = () => load();
+setInterval(() => document.visibilityState === "visible" && load(true), 30000);
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && load(true));
+load();
 })();
 </script>
 </body>
