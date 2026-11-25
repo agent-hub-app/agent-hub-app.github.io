@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Agent Hub</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232b59c3'/><path d='M9 17l5 5 9-11' stroke='white' stroke-width='3.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#15181e; --muted:#5d6573; --faint:#8a93a2; --line:#e3e6ec;
+  --accent:#2b59c3; --accent-ink:#fff; --accent-soft:#e8eefb;
+  --you:#b45309; --you-soft:#fdf1e0; --ok:#15803d; --ok-soft:#e5f5ea; --bad:#b91c1c; --bad-soft:#fbe9e9;
+  --work:#2b59c3; --work-soft:#e8eefb; --idle:#6b7280; --idle-soft:#eef0f3;
+  --radius:12px; --shadow:0 1px 2px rgba(16,24,40,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0f1115; --panel:#171a21; --ink:#e8eaee; --muted:#a1a8b5; --faint:#727a88; --line:#272b35;
+    --accent:#6d93f0; --accent-ink:#0b0f18; --accent-soft:#1c2640;
+    --you:#f0a24a; --you-soft:#33240f; --ok:#4ade80; --ok-soft:#12291b; --bad:#f87171; --bad-soft:#331616;
+    --work:#6d93f0; --work-soft:#1c2640; --idle:#9aa1ad; --idle-soft:#22262e; --shadow:none;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:12px;height:56px}
+.brand{font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand i{width:22px;height:22px;border-radius:6px;background:var(--accent);display:inline-grid;place-items:center}
+.sync{margin-left:auto;color:var(--faint);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+@media (prefers-color-scheme:dark){.btn.ok{color:#08130c}}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn.ghost:hover{color:var(--ink);border-color:var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+.icon-btn{border:none;background:none;cursor:pointer;color:var(--muted);padding:6px;border-radius:6px}
+.icon-btn:hover{background:var(--idle-soft);color:var(--ink)}
+main{padding:24px 0 64px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.stat b{display:block;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat span{color:var(--muted);font-size:13px}
+.stat.you b{color:var(--you)}
+@media (max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+h2 .count{background:var(--you-soft);color:var(--you);border-radius:99px;padding:0 8px;font-size:12px;letter-spacing:0}
+section{margin-bottom:32px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.need{padding:16px;display:grid;grid-template-columns:1fr auto;gap:8px 16px;align-items:start;border-left:3px solid var(--you);margin-bottom:10px}
+.need .meta{color:var(--muted);font-size:13px}
+.need h3{margin:2px 0 4px;font-size:16px}
+.need p{margin:0;color:var(--muted);white-space:pre-wrap}
+.need .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.need .note{grid-column:1/-1;display:none;gap:8px}
+.need.noting .note{display:flex}
+.need .note input{flex:1;min-width:0}
+@media (max-width:640px){.need{grid-template-columns:1fr}.need .actions{justify-content:flex-start}}
+input[type=text],input[type=password],textarea{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;outline:none}
+input:focus,textarea:focus{border-color:var(--accent)}
+.empty{padding:20px;color:var(--muted);text-align:center}
+.agents{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+@media (max-width:400px){.agents{grid-template-columns:1fr}}
+.agent{padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.agent-top{display:flex;align-items:center;gap:10px}
+.avatar{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-weight:700;background:var(--accent-soft);color:var(--accent);flex:none}
+.agent-top h3{margin:0;font-size:16px;line-height:1.2}
+.agent-top small{color:var(--faint);font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.s-working,.s-doing{background:var(--work-soft);color:var(--work)}
+.s-idle,.s-todo{background:var(--idle-soft);color:var(--idle)}
+.s-blocked,.s-rejected{background:var(--bad-soft);color:var(--bad)}
+.s-done,.s-confirmed{background:var(--ok-soft);color:var(--ok)}
+.s-needs-you{background:var(--you-soft);color:var(--you)}
+.agent-top .pill{margin-left:auto}
+.summary{margin:0;color:var(--muted);font-size:14px}
+.progress{height:6px;background:var(--idle-soft);border-radius:99px;overflow:hidden;display:flex}
+.progress i{display:block;height:100%}
+.tasks{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.tasks li{border-bottom:1px solid var(--line)}
+.tasks li:last-child{border-bottom:none}
+.trow{display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer;min-width:0}
+.trow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.trow .when{color:var(--faint);font-size:12px;white-space:nowrap}
+.tdetail{display:none;padding:0 0 12px;font-size:13px;color:var(--muted)}
+li.open .tdetail{display:block}
+.tdetail p{margin:0 0 6px;white-space:pre-wrap}
+.log{list-style:none;margin:6px 0 0;padding:0 0 0 12px;border-left:2px solid var(--line)}
+.log li{border:none;padding:2px 0}
+.log time{color:var(--faint);margin-right:6px;font-variant-numeric:tabular-nums}
+.more{background:none;border:none;color:var(--accent);cursor:pointer;padding:4px 0;font-size:13px;text-align:left}
+.msg{display:flex;gap:8px}
+.msg input{font-size:14px}
+.msgs{font-size:13px;color:var(--muted);margin:0;padding:0;list-style:none}
+.msgs li{padding:2px 0}
+.msgs b{color:var(--ink);font-weight:600}
+.done-list .row{display:flex;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-size:14px;min-width:0}
+.done-list .row:last-child{border-bottom:none}
+.done-list .row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.done-list .row small{color:var(--faint);white-space:nowrap}
+/* connect */
+.connect{max-width:560px;margin:40px auto;padding:24px}
+.connect h1{margin:0 0 6px;font-size:22px;letter-spacing:-.01em}
+.connect p{color:var(--muted);margin:0 0 16px}
+.connect label{display:block;font-size:13px;font-weight:600;margin:14px 0 6px}
+.connect ol{color:var(--muted);padding-left:20px;margin:0 0 4px;font-size:14px}
+.connect .row{display:flex;gap:8px;margin-top:18px;align-items:center}
+.err{color:var(--bad);font-size:14px;margin-top:10px;min-height:1em}
+code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;margin:8px 0 0;white-space:pre}
+dialog{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);color:var(--ink);padding:20px;max-width:min(680px,calc(100vw - 32px));width:100%}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog h3{margin:0 0 8px}
+dialog p{color:var(--muted);margin:8px 0}
+.brand{white-space:nowrap}
+@media (max-width:560px){.sync{display:none}#connectAgentBtn{margin-left:auto;padding:6px 8px}header .wrap{gap:4px}}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand"><i><svg width="14" height="14" viewBox="0 0 32 32"><path d="M7 17l6 6 12-14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>Agent Hub</div>
+  <div class="sync" id="sync"></div>
+  <button class="btn ghost" id="connectAgentBtn" hidden>Connect agent</button>
+  <button class="icon-btn" id="refreshBtn" title="Refresh" hidden aria-label="Refresh"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+  <button class="icon-btn" id="settingsBtn" title="Settings" hidden aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</div></header>
+
+<main class="wrap" id="app"></main>
+
+<dialog id="agentDlg">
+  <h3>Connect an agent</h3>
+  <p>Paste this into the agent's instructions (CLAUDE.md, AGENT.md, or a routine prompt). The agent then reports here and reads what you confirm.</p>
+  <pre id="snippet"></pre>
+  <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+    <button class="btn" id="copySnippet">Copy</button>
+    <button class="btn primary" onclick="this.closest('dialog').close()">Done</button>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+const API = "https://api.github.com";
+const DEFAULT_REPO = "guneytamer/agent-hub-data";
+const HUB_PY = "https://raw.githubusercontent.com/guneytamer/agent-hub/main/hub.py";
+const DEMO = new URLSearchParams(location.search).has("demo");
+
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+  del(k){ try { localStorage.removeItem(k); } catch {} },
+};
+let cfg = { repo: store.get("hub.repo") || DEFAULT_REPO, token: store.get("hub.token") || "" };
+let state = { agents: [], responses: {}, loadedAt: null };
+const openTasks = new Set();
+const expanded = new Set();
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const iso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+function ago(t){
+  if(!t) return "";
+  const s = (Date.now() - new Date(t)) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s/60) + "m ago";
+  if (s < 86400) return Math.floor(s/3600) + "h ago";
+  if (s < 86400*7) return Math.floor(s/86400) + "d ago";
+  return new Date(t).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+}
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+
+// ---------- GitHub contents API ----------
+async function gh(path, opts={}){
+  const r = await fetch(`${API}/repos/${cfg.repo}/${path}`, {
+    ...opts, cache: "no-store",
+    headers: { "Authorization": `Bearer ${cfg.token}`, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(opts.headers||{}) },
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) { const e = new Error(`GitHub ${r.status}: ${(await r.json().catch(()=>({}))).message || r.statusText}`); e.status = r.status; throw e; }
+  return r.json();
+}
+const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,"")), c => c.charCodeAt(0)));
+const b64enc = s => { const b = new TextEncoder().encode(s); let out=""; for (let i=0;i<b.length;i+=0x8000) out += String.fromCharCode(...b.subarray(i,i+0x8000)); return btoa(out); };
+async function readJSON(path){
+  const f = await gh(`contents/${path}`);
+  if (!f) return { data: null, sha: null };
+  return { data: JSON.parse(b64dec(f.content)), sha: f.sha };
+}
+
+async function load(){
+  if (DEMO) { state = demoData(); state.loadedAt = new Date(); return; }
+  const [agentDir, respDir] = await Promise.all([gh("contents/agents"), gh("contents/responses")]);
+  const files = (agentDir||[]).filter(f => f.name.endsWith(".json"));
+  const respFiles = (respDir||[]).filter(f => f.name.endsWith(".json"));
+  const [agents, resps] = await Promise.all([
+    Promise.all(files.map(f => readJSON(`agents/${f.name}`).then(r => r.data).catch(() => null))),
+    Promise.all(respFiles.map(f => readJSON(`responses/${f.name}`).then(r => [f.name.replace(/\.json$/,""), r.data]).catch(() => null))),
+  ]);
+  state.agents = agents.filter(Boolean);
+  state.responses = Object.fromEntries(resps.filter(Boolean));
+  state.loadedAt = new Date();
+}
+
+// Read-modify-write responses/<agent>.json with retry on sha conflicts.
+async function writeResponse(agentId, mutate, message){
+  if (DEMO) { const r = state.responses[agentId] ||= {responses:{},messages:[]}; mutate(r); return; }
+  for (let i = 0; i < 4; i++) {
+    const { data, sha } = await readJSON(`responses/${agentId}.json`);
+    const doc = data || { agent: agentId, responses: {}, messages: [] };
+    doc.responses ||= {}; doc.messages ||= [];
+    mutate(doc);
+    try {
+      await gh(`contents/responses/${agentId}.json`, { method: "PUT", body: JSON.stringify({
+        message, content: b64enc(JSON.stringify(doc, null, 2) + "\n"), ...(sha ? { sha } : {}),
+      })});
+      state.responses[agentId] = doc;
+      return;
+    } catch (e) { if (e.status !== 409 && e.status !== 422) throw e; }
+  }
+  throw new Error("Could not save after retries — try again.");
+}
+
+// ---------- derived ----------
+function effState(agentId, t){
+  const r = state.responses[agentId]?.responses?.[t.id];
+  if (r && t.state === "needs-you") return r.decision;
+  return t.state;
+}
+function allTasks(){
+  return state.agents.flatMap(a => (a.tasks||[]).map(t => ({ a, t, s: effState(a.agent, t), r: state.responses[a.agent]?.responses?.[t.id] })));
+}
+
+// ---------- render ----------
+function render(){
+  if (!cfg.token && !DEMO) return renderConnect();
+  ["#connectAgentBtn","#refreshBtn","#settingsBtn"].forEach(s => $(s).hidden = false);
+  const all = allTasks();
+  const needs = all.filter(x => x.s === "needs-you").sort((x,y) => x.t.created < y.t.created ? -1 : 1);
+  const weekAgo = Date.now() - 7*864e5;
+  const recent = all.filter(x => (x.s === "confirmed" || x.s === "rejected" || x.s === "done") && new Date(x.r?.at || x.t.updated) > weekAgo)
+                    .sort((x,y) => (x.r?.at||x.t.updated) < (y.r?.at||y.t.updated) ? 1 : -1);
+  const working = state.agents.filter(a => a.status === "working").length;
+  const doneWeek = all.filter(x => x.s === "done" && new Date(x.t.updated) > weekAgo).length;
+  const confirmedWeek = all.filter(x => x.s === "confirmed" && new Date(x.r.at) > weekAgo).length;
+
+  $("#app").innerHTML = `
+    <div class="stats">
+      <div class="stat you"><b>${needs.length}</b><span>Waiting on you</span></div>
+      <div class="stat"><b>${working}<small style="font-size:15px;color:var(--faint)"> / ${state.agents.length}</small></b><span>Agents working</span></div>
+      <div class="stat"><b>${doneWeek}</b><span>Agent tasks done · 7d</span></div>
+      <div class="stat"><b>${confirmedWeek}</b><span>You confirmed · 7d</span></div>
+    </div>
+
+    <section>
+      <h2>Waiting on you ${needs.length ? `<span class="count">${needs.length}</span>` : ""}</h2>
+      ${needs.length ? needs.map(needCard).join("") : `<div class="card empty">Nothing waiting on you. 🎉</div>`}
+    </section>
+
+    <section>
+      <h2>Agents</h2>
+      ${state.agents.length ? `<div class="agents">${state.agents.slice().sort((x,y)=> (x.updated<y.updated?1:-1)).map(agentCard).join("")}</div>`
+        : `<div class="card empty">No agents connected yet. <button class="btn primary" data-act="snippet" style="margin-left:8px">Connect an agent</button></div>`}
+    </section>
+
+    <section>
+      <h2>Recently finished · 7 days</h2>
+      ${recent.length ? `<div class="card done-list">${recent.slice(0,25).map(x => `
+        <div class="row"><span class="pill s-${x.s}">${label(x.s)}</span><span class="t" title="${esc(x.t.title)}">${esc(x.t.title)}</span>
+        <small>${esc(x.a.name)} · ${ago(x.r?.at || x.t.updated)}</small>
+        ${x.r ? `<button class="icon-btn" title="Undo" aria-label="Undo" data-act="undo" data-agent="${esc(x.a.agent)}" data-id="${esc(x.t.id)}">↶</button>` : ""}</div>`).join("")}</div>`
+        : `<div class="card empty">Nothing finished in the last week.</div>`}
+    </section>`;
+  $("#sync").textContent = (DEMO ? "Demo data · " : "") + `Updated ${state.loadedAt.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;
+}
+const label = s => ({ "needs-you":"needs you", doing:"in progress" }[s] || s);
+
+function needCard({a,t}){
+  return `<div class="card need" data-agent="${esc(a.agent)}" data-id="${esc(t.id)}">
+    <div>
+      <div class="meta">${esc(a.name)} · asked ${ago(t.created)}</div>
+      <h3>${esc(t.title)}</h3>
+      ${t.detail ? `<p>${esc(t.detail)}</p>` : ""}
+      ${t.link ? `<div style="margin-top:6px;font-size:14px"><a href="${esc(t.link)}" target="_blank" rel="noopener noreferrer">Open link ↗</a></div>` : ""}
+    </div>
+    <div class="actions">
+      <button class="btn ok" data-act="confirm">✓ Done</button>
+      <button class="btn" data-act="note">Reply…</button>
+    </div>
+    <div class="note">
+      <input type="text" placeholder="Note for the agent (optional)">
+      <button class="btn ok" data-act="confirm-note">Confirm</button>
+      <button class="btn" data-act="reject">Reject</button>
+    </div>
+  </div>`;
+}
+
+function agentCard(a){
+  const tasks = (a.tasks||[]).map(t => ({ t, s: effState(a.agent, t) }));
+  const order = { "needs-you":0, doing:1, blocked:2, todo:3, done:4, confirmed:4, rejected:5 };
+  tasks.sort((x,y) => (order[x.s]-order[y.s]) || (x.t.updated < y.t.updated ? 1 : -1));
+  const n = tasks.length || 1;
+  const cnt = k => tasks.filter(x => k.includes(x.s)).length;
+  const bars = [["done,confirmed","var(--ok)"],["doing","var(--work)"],["needs-you","var(--you)"],["blocked,rejected","var(--bad)"]]
+    .map(([k,c]) => `<i style="width:${cnt(k.split(","))/n*100}%;background:${c}"></i>`).join("");
+  const showAll = expanded.has(a.agent);
+  const visible = showAll ? tasks : tasks.slice(0, 6);
+  const msgs = (state.responses[a.agent]?.messages || []).slice(-2);
+  const seenMsgs = a.seen?._messages || "";
+  return `<div class="card agent" data-agent="${esc(a.agent)}">
+    <div class="agent-top">
+      <div class="avatar">${esc((a.name||a.agent).trim()[0].toUpperCase())}</div>
+      <div style="min-width:0"><h3>${esc(a.name || a.agent)}</h3><small>updated ${ago(a.updated)}</small></div>
+      <span class="pill s-${esc(a.status)}">${esc(a.status)}</span>
+    </div>
+    ${a.summary ? `<p class="summary">${esc(a.summary)}</p>` : ""}
+    ${tasks.length ? `<div class="progress" title="${cnt(["done","confirmed"])} of ${tasks.length} finished">${bars}</div>` : ""}
+    ${tasks.length ? `<ul class="tasks">${visible.map(({t,s}) => `
+      <li class="${openTasks.has(t.id) ? "open" : ""}" data-id="${esc(t.id)}">
+        <div class="trow" data-act="toggle"><span class="pill s-${s}">${label(s)}</span><span class="t">${esc(t.title)}</span><span class="when">${ago(t.updated)}</span></div>
+        <div class="tdetail">
+          ${t.detail ? `<p>${esc(t.detail)}</p>` : ""}
+          ${t.link ? `<p><a href="${esc(t.link)}" target="_blank" rel="noopener noreferrer">${esc(t.link)}</a></p>` : ""}
+          ${state.responses[a.agent]?.responses?.[t.id]?.note ? `<p><b>Your note:</b> ${esc(state.responses[a.agent].responses[t.id].note)}</p>` : ""}
+          ${(t.log||[]).length ? `<ul class="log">${t.log.slice().reverse().map(l => `<li><time>${ago(l.at)}</time>${esc(l.msg)}</li>`).join("")}</ul>` : (t.detail||t.link ? "" : "<p>No updates logged.</p>")}
+        </div>
+      </li>`).join("")}</ul>` : `<p class="summary">No tasks yet.</p>`}
+    ${tasks.length > 6 ? `<button class="more" data-act="expand">${showAll ? "Show less" : `Show all ${tasks.length}`}</button>` : ""}
+    ${msgs.length ? `<ul class="msgs">${msgs.map(m => `<li><b>You</b> ${ago(m.at)}: ${esc(m.text)} ${m.at <= seenMsgs ? "· <span title='The agent has read this'>seen</span>" : ""}</li>`).join("")}</ul>` : ""}
+    <form class="msg" data-act="msg"><input type="text" placeholder="Message ${esc(a.name || a.agent)}…" maxlength="2000"><button class="btn">Send</button></form>
+  </div>`;
+}
+
+function renderConnect(err=""){
+  ["#connectAgentBtn","#refreshBtn","#settingsBtn"].forEach(s => $(s).hidden = !cfg.token);
+  $("#sync").textContent = "";
+  $("#app").innerHTML = `<div class="card connect">
+    <h1>Connect your hub</h1>
+    <p>This page reads and writes your private <code>agent-hub-data</code> repo with a GitHub token. The token stays in this browser only.</p>
+    <ol>
+      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">GitHub → Fine-grained tokens → Generate</a>.</li>
+      <li>Repository access: <b>Only select repositories</b> → <code>agent-hub-data</code>.</li>
+      <li>Permissions → Repository → <b>Contents: Read and write</b>. Generate and paste it below.</li>
+    </ol>
+    <label for="repo">Data repo</label>
+    <input type="text" id="repo" value="${esc(cfg.repo)}" autocomplete="off" spellcheck="false">
+    <label for="token">Token</label>
+    <input type="password" id="token" value="${esc(cfg.token)}" placeholder="github_pat_…" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <button class="btn primary" id="saveCfg">Connect</button>
+      ${cfg.token ? `<button class="btn" id="cancelCfg">Cancel</button><button class="btn ghost" id="forget" style="margin-left:auto">Forget token</button>` : `<a href="?demo" style="margin-left:auto;font-size:14px">View demo</a>`}
+    </div>
+    <div class="err" id="cfgErr">${esc(err)}</div>
+  </div>`;
+  $("#saveCfg").onclick = async () => {
+    cfg.repo = $("#repo").value.trim(); cfg.token = $("#token").value.trim();
+    $("#cfgErr").textContent = "Checking…";
+    try {
+      const repo = await fetch(`${API}/repos/${cfg.repo}`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+      if (!repo.ok) throw new Error(repo.status === 401 ? "Token rejected." : repo.status === 404 ? "Repo not found, or the token can't see it." : `GitHub ${repo.status}`);
+      store.set("hub.repo", cfg.repo); store.set("hub.token", cfg.token);
+      await refresh();
+    } catch (e) { $("#cfgErr").textContent = e.message; }
+  };
+  if ($("#cancelCfg")) $("#cancelCfg").onclick = () => render();
+  if ($("#forget")) $("#forget").onclick = () => { store.del("hub.token"); cfg.token = ""; renderConnect(); };
+}
+
+async function refresh(quiet){
+  if (!cfg.token && !DEMO) return renderConnect();
+  if (!quiet) $("#sync").textContent = "Syncing…";
+  try { await load(); render(); }
+  catch (e) {
+    if (e.status === 401) { renderConnect("Token expired or revoked — paste a new one."); return; }
+    $("#sync").textContent = "Sync failed: " + e.message;
+  }
+}
+
+// ---------- actions ----------
+document.addEventListener("click", async ev => {
+  const el = ev.target.closest("[data-act]"); if (!el || el.tagName === "FORM") return;
+  const act = el.dataset.act;
+  if (act === "toggle") { const li = el.closest("li"); li.classList.toggle("open"); li.classList.contains("open") ? openTasks.add(li.dataset.id) : openTasks.delete(li.dataset.id); return; }
+  if (act === "expand") { const id = el.closest(".agent").dataset.agent; expanded.has(id) ? expanded.delete(id) : expanded.add(id); render(); return; }
+  if (act === "snippet") return showSnippet();
+  if (act === "note") { const c = el.closest(".need"); c.classList.toggle("noting"); c.querySelector("input").focus(); return; }
+  if (act === "undo") {
+    const { agent, id } = el.dataset; el.disabled = true;
+    try { await writeResponse(agent, d => { delete d.responses[id]; }, `Undo response on ${id}`); toast("Moved back to Waiting on you"); render(); }
+    catch (e) { toast(e.message); el.disabled = false; }
+    return;
+  }
+  if (["confirm","confirm-note","reject"].includes(act)) {
+    const c = el.closest(".need"); const { agent, id } = c.dataset;
+    const note = c.querySelector(".note input").value.trim();
+    const decision = act === "reject" ? "rejected" : "confirmed";
+    c.querySelectorAll("button").forEach(b => b.disabled = true);
+    try {
+      await writeResponse(agent, d => { d.responses[id] = { decision, at: iso(), ...(note ? { note } : {}) }; }, `${decision} ${id}`);
+      toast(decision === "confirmed" ? "Confirmed — the agent will see it on its next check" : "Rejected — sent back to the agent");
+      render();
+    } catch (e) { toast(e.message); c.querySelectorAll("button").forEach(b => b.disabled = false); }
+  }
+});
+document.addEventListener("submit", async ev => {
+  const f = ev.target.closest("form[data-act=msg]"); if (!f) return;
+  ev.preventDefault();
+  const input = f.querySelector("input"); const text = input.value.trim(); if (!text) return;
+  const agent = f.closest(".agent").dataset.agent;
+  f.querySelector("button").disabled = true;
+  try { await writeResponse(agent, d => { d.messages.push({ at: iso(), text }); d.messages = d.messages.slice(-50); }, `Message to ${agent}`); toast("Sent"); render(); }
+  catch (e) { toast(e.message); f.querySelector("button").disabled = false; }
+});
+
+function showSnippet(){
+  $("#snippet").textContent =
+`## Agent Hub — report progress to Güney's dashboard
+Setup (once per session; skip steps already done):
+  git clone https://github.com/${cfg.repo}.git ~/agent-hub-data 2>/dev/null || git -C ~/agent-hub-data pull -q
+  curl -fsSL ${HUB_PY} -o ~/hub.py
+  export HUB_DIR=~/agent-hub-data HUB_AGENT=<your-agent-id>   # e.g. career-agent
+  python3 ~/hub.py init --name "<Display Name>"               # first time only
+
+Rules:
+- At the start of every run: python3 ~/hub.py check  → act on what the user CONFIRMED,
+  REJECTED (read the note) or MESSAGED. Do not redo confirmed work.
+- python3 ~/hub.py status working "what you're doing now"   (idle/blocked/done when you stop)
+- Own work:  id=$(python3 ~/hub.py add "title" --detail "...")
+             python3 ~/hub.py update $id --state doing|done|blocked --log "what happened"
+- Need the user to do/approve something: python3 ~/hub.py add "title" --you --detail "exact steps" --link URL
+  Never treat a --you task as done until \`check\` shows it CONFIRMED.
+- Never put passwords, tokens or other secrets in tasks or logs.`;
+  $("#agentDlg").showModal();
+}
+$("#copySnippet").onclick = async () => { try { await navigator.clipboard.writeText($("#snippet").textContent); toast("Copied"); } catch { toast("Select the text and copy it"); } };
+$("#connectAgentBtn").onclick = showSnippet;
+$("#refreshBtn").onclick = () => refresh();
+$("#settingsBtn").onclick = () => renderConnect();
+setInterval(() => { if (document.visibilityState === "visible" && (cfg.token || DEMO) && !document.querySelector(".need.noting, form.msg input:focus, #token")) refresh(true); }, 60000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && cfg.token && state.loadedAt && Date.now() - state.loadedAt > 30000) refresh(true); });
+
+function demoData(){
+  const h = n => new Date(Date.now() - n*3600e3).toISOString().replace(/\.\d{3}Z$/,"Z");
+  return {
+    agents: [
+      { agent:"career-agent", name:"Career Agent", status:"working", summary:"Scanning Greenhouse and Lever for sound design roles.", updated:h(.3), seen:{},
+        tasks:[
+          { id:"t-1", title:"Approve application package: Riot Games — Senior Sound Designer", owner:"you", state:"needs-you", detail:"Résumé v3 + cover letter are in packages/riot/. Reply APPROVE or note changes.", link:"https://github.com", created:h(5), updated:h(5), log:[] },
+          { id:"t-2", title:"Submit Workday application for Sledgehammer (portal needs your login)", owner:"you", state:"needs-you", detail:"Steps: open link, sign in, upload resume.pdf, submit.", link:"", created:h(26), updated:h(26), log:[] },
+          { id:"t-3", title:"Daily job scan", owner:"agent", state:"doing", created:h(1), updated:h(.3), log:[{at:h(1),msg:"Started scan"},{at:h(.3),msg:"14 new listings, 3 match"}] },
+          { id:"t-4", title:"Draft daily report email", owner:"agent", state:"done", created:h(20), updated:h(19), log:[{at:h(19),msg:"Gmail draft created"}] },
+        ]},
+      { agent:"barvision", name:"BarVision Builder", status:"idle", summary:"Waiting for App Review.", updated:h(30), seen:{},
+        tasks:[
+          { id:"t-5", title:"Resubmit 1.0 with 2.1 answers", owner:"agent", state:"done", created:h(80), updated:h(60), log:[] },
+          { id:"t-6", title:"Upload new screenshots in App Store Connect", owner:"you", state:"needs-you", detail:"Files in barvision-store-upload/shots/.", created:h(30), updated:h(30), log:[] },
+          { id:"t-7", title:"Property question set", owner:"agent", state:"blocked", detail:"Need source PDF for 2026 rules.", created:h(40), updated:h(32), log:[] },
+        ]},
+    ],
+    responses: { "career-agent": { responses: { }, messages:[{at:h(3),text:"Skip anything that requires relocation."}] } },
+  };
+}
+
+refresh();
+})();
+</script>
+</body>
+</html>
