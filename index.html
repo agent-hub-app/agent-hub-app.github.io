@@ -122,6 +122,14 @@ dialog h3{margin:0 0 8px}
 dialog p{color:var(--muted);margin:8px 0}
 .brand{white-space:nowrap}
 @media (max-width:560px){.sync{display:none}#connectAgentBtn{margin-left:auto;padding:6px 8px}header .wrap{gap:4px}}
+.gate{max-width:340px;margin:12vh auto 0;padding:28px 24px;text-align:center}
+.gate h1{margin:0 0 4px;font-size:22px}
+.gate p{margin:0 0 18px;color:var(--muted)}
+.gate input{font-size:28px;letter-spacing:.5em;text-align:center;padding:10px 0 10px .5em;font-variant-numeric:tabular-nums}
+.gate .btn{width:100%;margin-top:12px;padding:10px}
+.gate .err{min-height:1.4em}
+.shake{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:calc(100vw - 32px)}
 .toast.show{opacity:1}
 </style>
@@ -131,10 +139,11 @@ dialog p{color:var(--muted);margin:8px 0}
   <div class="brand"><i><svg width="14" height="14" viewBox="0 0 32 32"><path d="M7 17l6 6 12-14" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></i>Agent Hub</div>
   <div class="sync" id="sync"></div>
   <a class="btn ghost" id="issuesLink" target="_blank" rel="noopener" style="text-decoration:none" hidden>All tasks in GitHub ↗</a>
+  <button class="icon-btn" id="lockBtn" title="Lock" aria-label="Lock" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
   <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
 </div></header>
 
-<main class="wrap" id="app"><div class="card empty">Loading…</div></main>
+<main class="wrap" id="app"></main>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -156,16 +165,68 @@ function ago(t){
 const label = s => ({ "needs-you":"needs you", doing:"in progress" }[s] || s);
 const issueURL = n => `https://github.com/${data.repo}/issues/${n}`;
 
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+  del(k){ try { localStorage.removeItem(k); } catch {} },
+};
+let code = store.get("hub.code") || "";
+const keyCache = new Map();
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+async function decrypt(env, pass){
+  if (!env.ct) return env;               // unencrypted (legacy) snapshot
+  const id = env.salt + ":" + pass;
+  let key = keyCache.get(id);
+  if (!key) {
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+    key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64(env.salt), iterations: env.iter },
+      base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    keyCache.clear(); keyCache.set(id, key);
+  }
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(env.iv) }, key, b64(env.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+async function fetchEnv(){
+  const r = await fetch(`hub.json?t=${Date.now()}`, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status === 404 ? "No data published yet." : `HTTP ${r.status}`);
+  return r.json();
+}
+
+function renderGate(msg=""){
+  data = null; $("#lockBtn").hidden = true; $("#issuesLink").hidden = true; $("#refreshBtn").hidden = true; $("#sync").textContent = "";
+  $("#app").innerHTML = `<form class="card gate" id="gate">
+    <h1>Agent Hub</h1><p>Enter the passcode</p>
+    <input id="code" type="password" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="Passcode" autofocus>
+    <button class="btn primary">Open</button>
+    <div class="err" id="gateErr">${esc(msg)}</div>
+  </form>`;
+  const input = $("#code"); setTimeout(() => input.focus(), 50);
+  $("#gate").onsubmit = async ev => {
+    ev.preventDefault();
+    const pass = input.value.trim(); if (!pass) return;
+    $("#gateErr").textContent = "Checking…";
+    try {
+      const plain = await decrypt(await fetchEnv(), pass);
+      code = pass; store.set("hub.code", pass); data = plain; render();
+    } catch (e) {
+      $("#gateErr").textContent = e.name === "OperationError" ? "Wrong passcode" : "Couldn't load: " + e.message;
+      input.value = ""; $("#gate").classList.remove("shake"); void $("#gate").offsetWidth; $("#gate").classList.add("shake"); input.focus();
+    }
+  };
+}
+
 async function load(quiet){
+  if (!code) return renderGate();
   if (!quiet) $("#sync").textContent = "Updating…";
   try {
-    const r = await fetch(`hub.json?t=${Date.now()}`, { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status === 404 ? "No data published yet." : `HTTP ${r.status}`);
-    data = await r.json();
+    data = await decrypt(await fetchEnv(), code);
     render();
   } catch (e) {
+    if (e.name === "OperationError") { store.del("hub.code"); code = ""; return renderGate("Passcode changed — enter the new one"); }
     $("#sync").textContent = "";
-    if (!data) $("#app").innerHTML = `<div class="card empty">Couldn't load the hub: ${esc(e.message)}<br><small>It fills in after your agents' first update.</small></div>`;
+    if (!data) $("#app").innerHTML = `<div class="card empty">Couldn't load the hub: ${esc(e.message)}</div>`;
   }
 }
 
@@ -177,7 +238,7 @@ function render(){
                     .sort((x,y) => x.t.updated < y.t.updated ? 1 : -1);
   const working = data.agents.filter(a => a.status === "working").length;
   $("#issuesLink").href = `https://github.com/${data.repo}/issues?q=is%3Aopen+label%3Aneeds-you`;
-  $("#issuesLink").hidden = false;
+  $("#issuesLink").hidden = false; $("#lockBtn").hidden = false; $("#refreshBtn").hidden = false;
 
   $("#app").innerHTML = `
     <div class="stats">
@@ -247,8 +308,9 @@ document.addEventListener("click", e => {
   openAgents.has(b.dataset.agent) ? openAgents.delete(b.dataset.agent) : openAgents.add(b.dataset.agent); render();
 });
 $("#refreshBtn").onclick = () => load();
-setInterval(() => document.visibilityState === "visible" && load(true), 30000);
-document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && load(true));
+$("#lockBtn").onclick = () => { store.del("hub.code"); code = ""; keyCache.clear(); renderGate(); };
+setInterval(() => code && document.visibilityState === "visible" && load(true), 30000);
+document.addEventListener("visibilitychange", () => code && document.visibilityState === "visible" && load(true));
 load();
 })();
 </script>
